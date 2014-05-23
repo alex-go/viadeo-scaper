@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+
+require_relative '../lib/viadeo-scraper'
+profile = Viadeo::Profile.new(ARGV[0])
+puts JSON.pretty_generate JSON.parse(profile.to_json)
