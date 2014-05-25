@@ -4,23 +4,21 @@ module Viadeo
 
     USER_AGENTS = ['Windows IE 6', 'Windows IE 7', 'Windows Mozilla', 'Mac Safari', 'Mac FireFox', 'Mac Mozilla', 'Linux Mozilla', 'Linux Firefox', 'Linux Konqueror']
 
-    ATTRIBUTES = %w(name first_name last_name title location country industry summary picture viadeo_url education groups websites languages skills certifications organizations past_companies current_companies recommended_visitors)
+    ATTRIBUTES = %w(name first_name last_name title location country industry summary keywords picture viadeo_url education groups websites languages skills certifications organizations past_companies current_companies recommended_visitors)
 
     attr_reader :page, :viadeo_url
 
     def self.get_profile(url,options = {})
- #     begin
           Viadeo::Profile.new(url,options)
-#      rescue => e
- #       puts e
- #     end
     end
 
     def initialize(url, options = {})
       @viadeo_url = url
       @options = options
       @page         = http_client.get(url)
-      pp @page.search('.blockitemEmployment/.gu-date/.stillIntrue').map{ |n| n.parent().parent()}
+#        @page.search(".blockitemEmployment/.gu-date/\.stillInfalse").map{|n| n.parent().parent()}.each do |node|
+#	pp node.at('.itemName')['href'] if node.at('.itemName')
+#	end
     end
 
     def name
@@ -53,8 +51,7 @@ module Viadeo
     end
 
     def summary
-	##TODO
-      @summary ||= (@page.at('.description.summary').text.gsub(/\s+/, ' ').strip if @page.at('.description.summary'))
+      @summary ||= (@page.at('.detailResume').text.gsub(/\s+/, ' ').strip if @page.at('.detailResume'))
     end
 
     def picture
@@ -72,10 +69,14 @@ module Viadeo
     def current_companies
       @current_companies ||= get_companies('stillIntrue')
     end
+    def keywords
+      @keywords ||= @page.search('.keywords//.bubbleText').map do |item|
+        item.text.gsub(/\s+|\n/, ' ').strip
+      end
+    end
 
     def education
-	#TODO
-      @education ||= @page.search('.blockitemEducation').map do |item|
+       @education ||= @page.search('.blockitemEducation').map do |item|
         name   = item.at('span[itemprop="name"]').text.gsub(/\s+|\n/, ' ').strip      if item.at('span[itemprop="name"]')
         desc   = item.at('.type').text.gsub(/\s+|\n/, ' ').strip      if item.at('.type')
         startDate = item.at('.dtstart').text.gsub(/\s+|\n/, ' ').strip if item.at('.dtstart')
@@ -95,10 +96,9 @@ module Viadeo
     end
 
     def groups
-#TODO
-      @groups ||= @page.search('.group-data').map do |item|
+      @groups ||= @page.search('.boxFollowGroup//a').map do |item|
         name = item.text.gsub(/\s+|\n/, ' ').strip
-        link = "http://www.linkedin.com#{item.at('a')['href']}"
+        link = "item['href']}"
         {:name => name, :link => link}
       end
     end
@@ -115,10 +115,9 @@ module Viadeo
     end
 
     def languages
-##TODO
-      @languages ||= @page.search('ul.languages/li.language').map do |item|
-        language    = item.at('h3').text rescue nil
-        proficiency = item.at('span.proficiency').text.gsub(/\s+|\n/, ' ').strip rescue nil
+      @languages ||= @page.search('.spoken-languages//span.name').map do |item|
+        language    = item['data-isocode'] rescue nil
+        proficiency = item.parent.at('div/div')['class'].split(' ').first[-1,1]
         {:language=> language, :proficiency => proficiency }
       end
     end
@@ -139,12 +138,12 @@ module Viadeo
 
     def recommended_visitors
 ##TODO
-      @recommended_visitors ||= @page.search('.browsemap/.content/ul/li').map do |visitor|
+      @recommended_visitors ||= @page.search('.contact-list//li.contact').map do |visitor|
         v = {}
         v[:link]    = visitor.at('a')['href']
-        v[:name]    = visitor.at('strong/a').text
-        v[:title]   = visitor.at('.headline').text.gsub('...',' ').split(' at ').first
-        v[:company] = visitor.at('.headline').text.gsub('...',' ').split(' at ')[1]
+        v[:name]    = visitor.at('.bd/h4.fullname/a').text
+        v[:title]   = visitor.at('.headline').text.gsub('...',' ').split(', ').first
+        v[:company] = visitor.at('.headline').text.gsub('...',' ').split(', ')[1]
         v
       end
     end
@@ -161,12 +160,14 @@ module Viadeo
 ## blockitemEmployment class date stillIntrue
       companies = []
       if @page.search(".blockitemEmployment/.gu-date/\.#{type}").map{|n| n.parent().parent()}.first 
-        @page.search(".blockitemEmployment/.gu-date/\.#{type}").each do |node|
+        @page.search(".blockitemEmployment/.gu-date/\.#{type}").map{|n| n.parent().parent()}.each do |node|
 
           company               = {}
           company[:title]       = node.at('.titre').text.gsub(/\s+|\n/, ' ').strip if node.at('.titre')
-          company[:company]     = node.at('span[itemprop="name"]').text.gsub(/\s+|\n/, ' ').strip if node.at('span[itemprop="name"]')
-          company[:description] = node.at(".description.#{type}-position").text.gsub(/\s+|\n/, ' ').strip if node.at(".description.#{type}-position")
+          company[:company]     = node.at('.title/div').text.gsub(/\s+|\n/, ' ').strip if node.at('.title/div')
+#          company[:company]     = node.at('span[itemprop="name"]').text.gsub(/\s+|\n/, ' ').strip if node.at('span[itemprop="name"]')
+#          company[:description] = node.at('span[itemprop="name"]/div').text.gsub(/\s+|\n/, ' ').strip if node.at('span[itemprop="name"]/div')
+          company[:description] = node.at(".description").text.gsub(/\s+|\n/, ' ').strip if node.at(".description")
 
           start_date  = node.at('.dtstart')['title'] rescue nil
           company[:start_date] = parse_date(start_date) rescue nil
@@ -174,10 +175,13 @@ module Viadeo
           end_date = node.at('.dtend')['title'] rescue nil
           company[:end_date] = parse_date(end_date) rescue nil
 
-          company_link = node.at('h4/strong/a')['href'] if node.at('h4/strong/a')
-
+	  company_link = node.at('.itemName')['href'] if node.at('.itemName')
+	  if company_link =~ /\/company\//
           result = get_company_details(company_link)
           companies << company.merge!(result)
+	  else
+	  companies << company
+	  end
         end
       end
       companies
@@ -189,10 +193,10 @@ module Viadeo
     end
 
     def get_company_details(link)
-      result = {:linkedin_company_url => "http://www.linkedin.com#{link}"}
-      page = http_client.get(result[:linkedin_company_url])
+      result = {:viadeo_company_url => link}
+      page = http_client.get(result[:viadeo_company_url])
 
-      result[:url] = page.at('.basic-info/div/dl/dd/a').text if page.at('.basic-info/div/dl/dd/a')
+      result[:url] = page.at('.website')['href'] if page.at('.website')
       node_2 = page.at('.basic-info/.content.inner-mod')
       if node_2
         node_2.search('dd').zip(node_2.search('dt')).each do |value,title|
